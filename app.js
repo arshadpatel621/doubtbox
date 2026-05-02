@@ -133,6 +133,48 @@ function createClass() {
   listenQuestions();
 }
 
+// ===== TEACHER: RE-JOIN CLASS =====
+function rejoinClassTeacher() {
+  var id = $("rejoinClassId").value.trim().toUpperCase();
+  var pass = $("rejoinPassword").value.trim();
+
+  if (!id) { toast("Enter the class ID", "error"); return; }
+  if (!pass) { toast("Enter the password", "error"); return; }
+
+  db.collection("classes").doc(id).get().then(function (doc) {
+    if (!doc.exists) { toast("Invalid Class ID", "error"); return; }
+    
+    var d = doc.data();
+    if (d.password !== pass) { toast("Wrong password", "error"); return; }
+    if (Date.now() > d.endTime) { toast("This class has already expired ⛔", "error"); return; }
+
+    // Restore state
+    currentClassId = id;
+    currentPassword = d.password;
+    endTimeGlobal = d.endTime;
+
+    // Show dashboard
+    $("dashClassName").textContent = d.className;
+    $("displayClassId").textContent = currentClassId;
+    $("displayPassword").textContent = currentPassword;
+
+    showScreen("teacherDashboard");
+
+    // QR Code
+    var qrData = getShareUrl();
+    QRCode.toCanvas($("qrCanvas"), qrData, { width: 180, margin: 1 }, function (err) {
+      if (err) console.error("QR Error:", err);
+    });
+
+    startTimer();
+    listenQuestions();
+    toast("Welcome back!");
+  }).catch(function (err) {
+    console.error(err);
+    toast("Connection error. Try again.", "error");
+  });
+}
+
 // ===== COPY & SHARE =====
 function copyId() {
   navigator.clipboard.writeText(currentClassId).then(function () { toast("Class ID copied!"); });
@@ -244,6 +286,13 @@ function listenQuestions() {
           var actions = document.createElement("div");
           actions.className = "q-actions";
 
+          var visibilityBtn = document.createElement("button");
+          visibilityBtn.className = "btn " + (d.isPublic ? "btn-secondary" : "btn-primary");
+          visibilityBtn.textContent = d.isPublic ? "🙈 Hide" : "👁️ Make Public";
+          visibilityBtn.addEventListener("click", (function(id, currentState) {
+            return function() { toggleVisibility(id, currentState); };
+          })(docId, d.isPublic));
+
           var input = document.createElement("input");
           input.className = "form-input";
           input.id = "ans-" + docId;
@@ -263,6 +312,7 @@ function listenQuestions() {
             return function () { solveQuestion(id); };
           })(docId));
 
+          actions.appendChild(visibilityBtn);
           actions.appendChild(input);
           actions.appendChild(replyBtn);
           actions.appendChild(solveBtn);
@@ -296,6 +346,15 @@ function solveQuestion(id) {
     toast("Marked as solved!");
   }).catch(function () {
     toast("Failed to update", "error");
+  });
+}
+
+function toggleVisibility(id, currentState) {
+  var newState = !currentState;
+  db.collection("questions").doc(id).update({ isPublic: newState }).then(function () {
+    toast(newState ? "Question is now public!" : "Question hidden from students.");
+  }).catch(function () {
+    toast("Failed to change visibility", "error");
   });
 }
 
@@ -339,9 +398,10 @@ function sendQuestion() {
     question: q,
     answer: "",
     solved: false,
+    isPublic: false,
     timestamp: new Date()
   }).then(function () {
-    toast("Question sent anonymously!");
+    toast("Question sent privately to the teacher!");
     $("questionInput").value = "";
   }).catch(function () {
     toast("Failed to send question", "error");
@@ -358,19 +418,22 @@ function listenStudentQuestions() {
       var container = $("studentResponses");
       container.innerHTML = "";
 
-      if (snapshot.empty) {
+      var docsArray = [];
+      snapshot.forEach(function (doc) {
+        var d = doc.data();
+        if (d.isPublic) {
+          docsArray.push(d);
+        }
+      });
+
+      if (docsArray.length === 0) {
         container.innerHTML =
           '<div class="empty-state">' +
           '<div class="empty-icon">🤔</div>' +
-          "<p>No questions yet. Be the first to ask!</p>" +
+          "<p>Questions are hidden until approved by the teacher.</p>" +
           "</div>";
         return;
       }
-
-      var docsArray = [];
-      snapshot.forEach(function (doc) {
-        docsArray.push(doc.data());
-      });
 
       // Sort by timestamp descending (latest on top)
       docsArray.sort(function(a, b) {
@@ -511,7 +574,11 @@ document.addEventListener("DOMContentLoaded", function () {
   $("durationSelect").addEventListener("change", toggleCustom);
 
   // Teacher: create class
-  $("generateRoomBtn").addEventListener("click", createClass);
+  var genBtn = $("generateRoomBtn");
+  if (genBtn) genBtn.addEventListener("click", createClass);
+
+  var rejoinBtn = $("rejoinRoomBtn");
+  if (rejoinBtn) rejoinBtn.addEventListener("click", rejoinClassTeacher);
 
   // Teacher: share buttons
   $("copyIdBtn").addEventListener("click", copyId);
