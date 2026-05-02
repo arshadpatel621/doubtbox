@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DoubtBox — Anonymous Classroom Doubts</title>
+  <meta name="description" content="DoubtBox lets students ask doubts anonymously in class. Teachers create rooms, students join via QR or code.">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" type="image/png" href="logo.png?v=2">
+</head>
+<body>
+
+<!-- NAVBAR -->
+<nav class="navbar" id="navbar">
+  <div class="logo" id="logoBtn">
+    <img src="logo.png?v=2" alt="DoubtBox Logo" class="logo-img">
+    <span>DoubtBox</span>
+  </div>
+  <button class="nav-btn hidden" id="backBtn">← Home</button>
+</nav>
+
+<!-- TOAST CONTAINER -->
+<div class="toast-container" id="toastContainer"></div>
+
+<div class="container">
+
+  <!-- ===== HOME ===== -->
+  <div id="home">
+    <div class="hero fade-up">
+      <div class="hero-badge">✨ Anonymous • Real-time • Simple</div>
+      <h1>Ask doubts without fear. Teach without guessing.</h1>
+      <p>Create a class in seconds. Students join via QR or code and ask questions anonymously. You see everything live.</p>
+    </div>
+
+    <div class="role-grid">
+      <div class="role-card teacher fade-up delay-1" id="teacherCard">
+        <div class="role-icon">👨‍🏫</div>
+        <h3>I'm a Teacher</h3>
+        <p>Create a classroom, share the code, and manage student doubts in a live dashboard.</p>
+        <button class="btn btn-primary" id="teacherBtn">Create a Room →</button>
+      </div>
+      <div class="role-card student fade-up delay-2" id="studentCard">
+        <div class="role-icon">🎓</div>
+        <h3>I'm a Student</h3>
+        <p>Join with a class code or scan the QR. Ask your doubts anonymously — no judgement.</p>
+        <button class="btn btn-primary" id="studentBtn">Join a Room →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== TEACHER: CREATE ROOM ===== -->
+  <div id="teacherCreate" class="hidden">
+    <div class="section-header fade-up">
+      <div>
+        <div class="section-title">Create a Room</div>
+        <div class="section-subtitle">Set up your class in seconds</div>
+      </div>
+    </div>
+
+    <div class="glass-card fade-up delay-1" style="max-width:520px;">
+      <div class="form-group">
+        <label for="className">Class Name</label>
+        <input class="form-input" id="className" placeholder="e.g. Physics — Chapter 5">
+      </div>
+      <div class="form-group">
+        <label for="classPassword">Set Password</label>
+        <input class="form-input" id="classPassword" type="text" placeholder="Students will need this to join">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="durationSelect">Duration</label>
+          <select class="form-input" id="durationSelect">
+            <option value="15">15 minutes</option>
+            <option value="30">30 minutes</option>
+            <option value="60" selected>1 hour</option>
+            <option value="120">2 hours</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+        <div class="form-group hidden" id="customGroup">
+          <label for="customDuration">Minutes</label>
+          <input class="form-input" id="customDuration" type="number" placeholder="e.g. 45" min="1">
+        </div>
+      </div>
+      <button class="btn btn-primary" id="generateRoomBtn" style="margin-top:8px;">🚀 Generate Room</button>
+    </div>
+  </div>
+
+  <!-- ===== TEACHER: DASHBOARD ===== -->
+  <div id="teacherDashboard" class="hidden">
+    <div class="section-header fade-up">
+      <div>
+        <div class="section-title">📡 Live Dashboard</div>
+        <div class="section-subtitle" id="dashClassName"></div>
+      </div>
+      <div class="timer-display" id="timerDisplay">⏳ --:--</div>
+    </div>
+
+    <!-- Share Panel -->
+    <div class="glass-card fade-up delay-1" style="margin-bottom:20px;">
+      <div class="share-panel">
+        <div class="share-info">
+          <div class="info-chip">
+            <div>
+              <div class="label">Class ID</div>
+              <div class="value" id="displayClassId">—</div>
+            </div>
+          </div>
+          <div class="info-chip">
+            <div>
+              <div class="label">Password</div>
+              <div class="value" id="displayPassword">—</div>
+            </div>
+          </div>
+          <div class="btn-group">
+            <button class="btn btn-outline" id="copyIdBtn">📋 Copy ID</button>
+            <button class="btn btn-outline" id="copyPassBtn">🔑 Copy Password</button>
+            <button class="btn btn-outline" id="copyLinkBtn">🔗 Copy Link</button>
+            <button class="btn btn-outline" id="whatsappBtn">💬 WhatsApp</button>
+          </div>
+        </div>
+        <div class="qr-box">
+          <canvas id="qrCanvas"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-grid fade-up delay-2">
+      <div class="stat-card stat-total">
+        <div class="stat-label">Total</div>
+        <div class="stat-value" id="statTotal">0</div>
+      </div>
+      <div class="stat-card stat-solved">
+        <div class="stat-label">Solved</div>
+        <div class="stat-value" id="statSolved">0</div>
+      </div>
+      <div class="stat-card stat-pending">
+        <div class="stat-label">Pending</div>
+        <div class="stat-value" id="statPending">0</div>
+      </div>
+    </div>
+
+    <!-- Questions -->
+    <div class="glass-card fade-up delay-3" style="margin-top:20px;">
+      <h3 style="font-size:18px;font-weight:700;margin-bottom:16px;">Student Questions</h3>
+      <div id="questionsContainer">
+        <div class="empty-state">
+          <div class="empty-icon">💬</div>
+          <p>No questions yet. Share the code and wait for students to join!</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== STUDENT: JOIN ===== -->
+  <div id="studentJoin" class="hidden">
+    <div class="section-header fade-up">
+      <div>
+        <div class="section-title">Join a Room</div>
+        <div class="section-subtitle">Scan QR, use invite link, or enter code manually</div>
+      </div>
+    </div>
+
+    <!-- QR Scanner Section -->
+    <div class="glass-card fade-up delay-1" style="max-width:480px;margin-bottom:16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <label style="font-size:14px;font-weight:700;">📷 Scan QR Code</label>
+        <button class="btn btn-outline" id="scanToggleBtn" style="margin:0;">Open Scanner</button>
+      </div>
+      <div id="qrScannerContainer" class="hidden" style="border-radius:14px;overflow:hidden;">
+        <div id="qrReader" style="width:100%;"></div>
+      </div>
+      <p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Point your camera at the teacher's QR code to auto-join.</p>
+    </div>
+
+    <!-- Manual Join Form -->
+    <div class="glass-card fade-up delay-2" style="max-width:480px;">
+      <label style="font-size:14px;font-weight:700;margin-bottom:14px;display:block;">✏️ Or Join Manually</label>
+      <form id="joinForm">
+        <div class="form-group">
+          <label for="joinName">Your Name</label>
+          <input class="form-input" id="joinName" placeholder="e.g. Arshad" autocomplete="name" required>
+        </div>
+        <div class="form-group">
+          <label for="joinId">Class ID</label>
+          <input class="form-input" id="joinId" placeholder="e.g. A1B2C" autocomplete="off" required>
+        </div>
+        <div class="form-group">
+          <label for="joinPassword">Password</label>
+          <input class="form-input" id="joinPassword" type="password" placeholder="Ask your teacher" autocomplete="off" required>
+        </div>
+        <button type="submit" class="btn btn-primary" style="margin-top:8px;">🚪 Join Class</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== STUDENT: CHAT ===== -->
+  <div id="studentChat" class="hidden">
+    <div class="section-header fade-up">
+      <div>
+        <div class="section-title">💬 Ask a Doubt</div>
+        <div class="section-subtitle" id="studentClassLabel"></div>
+      </div>
+    </div>
+
+    <div class="glass-card fade-up delay-1" style="margin-bottom:20px;">
+      <div class="chat-input-row">
+        <input class="form-input" id="questionInput" placeholder="Type your doubt here...">
+        <button class="btn btn-primary" id="sendQuestionBtn" style="width:auto;padding:14px 24px;">Send</button>
+      </div>
+    </div>
+
+    <div id="studentResponses"></div>
+  </div>
+
+</div>
+
+<!-- FIREBASE -->
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<!-- QR Generate -->
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<!-- QR Scanner -->
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<!-- App Logic -->
+<script src="app.js"></script>
+
+</body>
+</html>
