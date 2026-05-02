@@ -18,12 +18,6 @@ var db = firebase.firestore();
 // ===== DOM HELPERS =====
 function $(id) { return document.getElementById(id); }
 
-function escapeHtml(str) {
-  var div = document.createElement("div");
-  div.textContent = str || "";
-  return div.innerHTML;
-}
-
 // ===== STATE =====
 var SCREENS = ["home", "teacherCreate", "teacherDashboard", "studentJoin", "studentChat"];
 var currentClassId = "";
