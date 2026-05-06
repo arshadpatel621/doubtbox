@@ -30,6 +30,8 @@ var questionsUnsubscribe = null;
 var studentUnsubscribe = null;
 var classUnsubscribe = null;
 var feedbackUnsubscribe = null;
+var liveStudentsUnsubscribe = null;
+var presenceInterval = null;
 var userRole = ""; // "teacher" or "student"
 
 // ===== TOAST =====
@@ -66,7 +68,19 @@ function showScreen(id, skipHistory) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-function goHome() { showScreen("home"); }
+function goHome() { 
+  // Cleanup
+  if (timerInterval) clearInterval(timerInterval);
+  if (presenceInterval) clearInterval(presenceInterval);
+  if (questionsUnsubscribe) questionsUnsubscribe();
+  if (studentUnsubscribe) studentUnsubscribe();
+  if (classUnsubscribe) classUnsubscribe();
+  if (feedbackUnsubscribe) feedbackUnsubscribe();
+  if (liveStudentsUnsubscribe) liveStudentsUnsubscribe();
+  
+  clearState();
+  showScreen("home"); 
+}
 function showTeacher() { showScreen("teacherCreate"); }
 function showStudent() { showScreen("studentJoin"); }
 
@@ -140,6 +154,9 @@ function createClass() {
   startTimer();
   listenQuestions();
   listenFeedback();
+  listenLiveStudents();
+
+  // Save state
 
   // Save state
   userRole = "teacher";
@@ -181,6 +198,9 @@ function rejoinClassTeacher() {
     startTimer();
     listenQuestions();
     listenFeedback();
+    listenLiveStudents();
+
+    // Save state
 
     // Save state
     userRole = "teacher";
@@ -402,6 +422,28 @@ function listenFeedback() {
     });
 }
 
+function listenLiveStudents() {
+  if (liveStudentsUnsubscribe) liveStudentsUnsubscribe();
+
+  liveStudentsUnsubscribe = db.collection("students")
+    .where("classId", "==", currentClassId)
+    .onSnapshot(function(snapshot) {
+      var now = Date.now();
+      var liveCount = 0;
+      
+      snapshot.forEach(function(doc) {
+        var d = doc.data();
+        // Count as live if seen in the last 60 seconds
+        var lastSeen = d.lastSeen ? d.lastSeen.toMillis() : 0;
+        if (now - lastSeen < 60000) {
+          liveCount++;
+        }
+      });
+      
+      $("statLive").textContent = liveCount;
+    });
+}
+
 function exportFeedbackToCSV() {
   if (!currentClassId) return;
   db.collection("feedback")
@@ -500,6 +542,7 @@ function joinClass(e) {
 
     listenStudentQuestions();
     listenClassStatus();
+    startPresence();
   }).catch(function () {
     toast("Connection error. Try again.", "error");
   });
@@ -647,10 +690,29 @@ function submitFeedback() {
     $("studentFeedback").querySelector(".glass-card").classList.add("hidden");
     $("feedbackThanks").classList.remove("hidden");
     toast("Feedback submitted! Thank you.");
+    if (presenceInterval) clearInterval(presenceInterval);
   }).catch(function(err) {
     console.error(err);
     toast("Failed to submit feedback", "error");
   });
+}
+
+function startPresence() {
+  if (presenceInterval) clearInterval(presenceInterval);
+  
+  var name = $("joinName").value.trim();
+  var studentDocId = currentClassId + "_" + name.replace(/\s+/g, "_");
+
+  function update() {
+    db.collection("students").doc(studentDocId).set({
+      classId: currentClassId,
+      studentName: name,
+      lastSeen: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  }
+
+  update(); // Immediate update
+  presenceInterval = setInterval(update, 30000); // Every 30 seconds
 }
 
 function setQuickFeedback(text) {

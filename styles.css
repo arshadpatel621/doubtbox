@@ -403,12 +403,7 @@ select.form-input option { background: #1e1b4b; color: #f1f5f9; }
 .qr-box canvas { width: 180px !important; height: 180px !important; }
 
 /* ===== STATS ===== */
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  margin-top: 20px;
-}
+.stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 20px; }
 
 .stat-card {
   background: var(--surface);
@@ -427,6 +422,29 @@ select.form-input option { background: #1e1b4b; color: #f1f5f9; }
 .stat-total .stat-value { color: var(--primary-light); }
 .stat-solved .stat-value { color: var(--success); }
 .stat-pending .stat-value { color: var(--danger); }
+.stat-live { color: #4ade80; border-color: rgba(74, 222, 128, 0.2); }
+
+.stat-live .stat-value {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.stat-live .stat-value::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  background: #4ade80;
+  border-radius: 50%;
+  box-shadow: 0 0 0 rgba(74, 222, 128, 0.4);
+  animation: live-pulse 1.5s infinite;
+}
+
+@keyframes live-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.7); }
+  70% { box-shadow: 0 0 0 10px rgba(74, 222, 128, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); }
+}
 
 /* ===== QUESTION CARDS ===== */
 .question-card {
