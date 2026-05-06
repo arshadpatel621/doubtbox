@@ -447,7 +447,7 @@ select.form-input option { background: #1e1b4b; color: #f1f5f9; }
   margin-bottom: 12px;
 }
 
-.q-text { font-size: 15px; font-weight: 600; line-height: 1.5; flex: 1; }
+.q-text { font-size: 15px; font-weight: 600; line-height: 1.5; flex: 1; word-break: break-word; }
 
 .q-pill {
   padding: 5px 12px;
@@ -548,6 +548,22 @@ select.form-input option { background: #1e1b4b; color: #f1f5f9; }
 .student-q-card .sq-answer { color: var(--text-muted); font-size: 14px; }
 .student-q-card .sq-answer.answered { color: var(--success); }
 
+/* ===== FEEDBACK CARDS ===== */
+.feedback-card {
+  background: var(--surface);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 18px;
+  margin-bottom: 12px;
+  transition: all 0.2s;
+}
+.feedback-card:hover { border-color: var(--warning); }
+.feedback-card .f-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.feedback-card .f-name { font-weight: 700; font-size: 15px; color: var(--text); }
+.feedback-card .f-usn { font-size: 12px; color: var(--text-muted); font-family: monospace; }
+.feedback-card .f-rating { color: var(--warning); font-size: 14px; }
+.feedback-card .f-comment { font-size: 14px; color: var(--text-muted); line-height: 1.5; margin-top: 8px; font-style: italic; }
+
 /* ===== RESPONSIVE ===== */
 @media (max-width: 768px) {
   .role-grid { grid-template-columns: 1fr; }
@@ -560,6 +576,9 @@ select.form-input option { background: #1e1b4b; color: #f1f5f9; }
   .section-header { flex-direction: column; align-items: flex-start; }
   .btn-group { width: 100%; }
   .btn-group .btn-outline { flex: 1; }
+  .q-actions { flex-wrap: wrap; }
+  .q-actions .form-input { flex: 1 1 100%; order: -1; }
+  .q-actions .btn { flex: 1; font-size: 13px; padding: 12px 8px; }
 }
 
 @media (max-width: 480px) {

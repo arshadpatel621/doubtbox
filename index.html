@@ -171,6 +171,23 @@
         </div>
       </div>
     </div>
+
+    <!-- Feedback Trigger -->
+    <button class="btn btn-primary fade-up delay-3" id="requestFeedbackBtn" style="margin-top:20px; background:linear-gradient(135deg, #f59e0b, #d97706);">📢 Request Feedback Form</button>
+
+    <!-- Feedback Results -->
+    <div class="glass-card fade-up delay-3 hidden" id="feedbackResultsSection" style="margin-top:20px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <h3 style="font-size:18px;font-weight:700;margin:0;">Class Feedback</h3>
+        <button class="btn btn-outline" id="exportFeedbackBtn">📥 Export CSV</button>
+      </div>
+      <div id="feedbackContainer">
+        <div class="empty-state">
+          <div class="empty-icon">📝</div>
+          <p>No feedback received yet.</p>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- ===== STUDENT: JOIN ===== -->
@@ -229,9 +246,64 @@
         <input class="form-input" id="questionInput" placeholder="Type your doubt here...">
         <button class="btn btn-primary" id="sendQuestionBtn" style="width:auto;padding:14px 24px;">Send</button>
       </div>
+      <button class="btn btn-primary hidden" id="studentGiveFeedbackBtn" style="margin-top:12px; background:linear-gradient(135deg, #f59e0b, #d97706); width:100%;">📝 Give Class Feedback</button>
     </div>
 
     <div id="studentResponses"></div>
+  </div>
+
+  <!-- ===== STUDENT: FEEDBACK ===== -->
+  <div id="studentFeedback" class="hidden">
+    <div class="section-header fade-up">
+      <div>
+        <div class="section-title">📝 Class Feedback</div>
+        <div class="section-subtitle">Please share your experience</div>
+      </div>
+    </div>
+
+    <div class="glass-card fade-up delay-1" style="max-width:520px; margin:0 auto;">
+      <div class="form-group">
+        <label for="feedbackName">Your Name</label>
+        <input class="form-input" id="feedbackName">
+      </div>
+      <div class="form-group">
+        <label for="feedbackUsn">USN (University Seat Number)</label>
+        <input class="form-input" id="feedbackUsn" placeholder="e.g. 1RV21CS001" required>
+      </div>
+      <div class="form-group">
+        <label for="feedbackRating">Rate this Class</label>
+        <select class="form-input" id="feedbackRating">
+          <option value="5">⭐⭐⭐⭐⭐ Excellent</option>
+          <option value="4">⭐⭐⭐⭐ Very Good</option>
+          <option value="3" selected>⭐⭐⭐ Good</option>
+          <option value="2">⭐⭐ Fair</option>
+          <option value="1">⭐ Poor</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="feedbackComment">Comments / Suggestions</label>
+        <div class="btn-group" style="margin-bottom:12px; gap:6px;">
+          <button class="btn btn-outline" style="padding:6px 12px; font-size:12px;" onclick="setQuickFeedback('Little bit understood')">😕 Little understood</button>
+          <button class="btn btn-outline" style="padding:6px 12px; font-size:12px;" onclick="setQuickFeedback('Still confused')">🤔 Confused</button>
+          <button class="btn btn-outline" style="padding:6px 12px; font-size:12px;" onclick="setQuickFeedback('Good, I learned something new')">💡 Learned something new</button>
+          <button class="btn btn-outline" style="padding:6px 12px; font-size:12px;" onclick="setQuickFeedback('Pace was too fast')">🏃 Too fast</button>
+          <button class="btn btn-outline" style="padding:6px 12px; font-size:12px;" onclick="setQuickFeedback('Very clear and easy to understand')">✨ Very clear</button>
+        </div>
+        <textarea class="form-input" id="feedbackComment" rows="4" placeholder="Or type your own comments here..."></textarea>
+      </div>
+      <button class="btn btn-primary" id="submitFeedbackBtn">🚀 Submit Feedback</button>
+      <button class="btn btn-secondary" style="margin-top:12px; width:100%;" onclick="showScreen('studentChat')">⬅ Back to Chat</button>
+    </div>
+
+    <div id="feedbackThanks" class="hidden" style="text-align:center; padding:40px;">
+      <div style="font-size:48px; margin-bottom:20px;">🎉</div>
+      <h3>Thank you for your feedback!</h3>
+      <p style="color:var(--text-muted); margin-top:8px;">Your response has been submitted to the teacher.</p>
+      <div class="btn-group" style="justify-content:center; margin-top:24px;">
+        <button class="btn btn-primary" onclick="showScreen('studentChat')">💬 Return to Chat</button>
+        <button class="btn btn-secondary" onclick="goHome()">🏠 Back to Home</button>
+      </div>
+    </div>
   </div>
 
 </div>

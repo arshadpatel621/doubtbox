@@ -19,7 +19,7 @@ var db = firebase.firestore();
 function $(id) { return document.getElementById(id); }
 
 // ===== STATE =====
-var SCREENS = ["home", "teacherCreate", "teacherDashboard", "studentJoin", "studentChat"];
+var SCREENS = ["home", "teacherCreate", "teacherDashboard", "studentJoin", "studentChat", "studentFeedback"];
 var currentClassId = "";
 var currentPassword = "";
 var endTimeGlobal = 0;
@@ -28,6 +28,9 @@ var html5QrCode = null;
 var scannerRunning = false;
 var questionsUnsubscribe = null;
 var studentUnsubscribe = null;
+var classUnsubscribe = null;
+var feedbackUnsubscribe = null;
+var userRole = ""; // "teacher" or "student"
 
 // ===== TOAST =====
 function toast(msg, type) {
@@ -43,7 +46,7 @@ function toast(msg, type) {
 }
 
 // ===== NAVIGATION =====
-function showScreen(id) {
+function showScreen(id, skipHistory) {
   // Stop QR scanner if leaving student join
   if (scannerRunning && id !== "studentJoin") {
     stopScanner();
@@ -55,6 +58,11 @@ function showScreen(id) {
   var target = $(id);
   if (target) target.classList.remove("hidden");
   $("backBtn").classList.toggle("hidden", id === "home");
+  
+  if (!skipHistory) {
+    history.pushState({ screen: id }, "", "");
+  }
+
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -131,6 +139,11 @@ function createClass() {
 
   startTimer();
   listenQuestions();
+  listenFeedback();
+
+  // Save state
+  userRole = "teacher";
+  saveState();
 }
 
 // ===== TEACHER: RE-JOIN CLASS =====
@@ -146,7 +159,6 @@ function rejoinClassTeacher() {
     
     var d = doc.data();
     if (d.password !== pass) { toast("Wrong password", "error"); return; }
-    if (Date.now() > d.endTime) { toast("This class has already expired ⛔", "error"); return; }
 
     // Restore state
     currentClassId = id;
@@ -168,6 +180,12 @@ function rejoinClassTeacher() {
 
     startTimer();
     listenQuestions();
+    listenFeedback();
+
+    // Save state
+    userRole = "teacher";
+    saveState();
+
     toast("Welcome back!");
   }).catch(function (err) {
     console.error(err);
@@ -329,6 +347,100 @@ function listenQuestions() {
     });
 }
 
+// ===== TEACHER: FEEDBACK =====
+function requestFeedback() {
+  if (!currentClassId) return;
+  db.collection("classes").doc(currentClassId).update({
+    feedbackRequested: true
+  }).then(function() {
+    toast("Feedback form sent to all students! 📢");
+    $("requestFeedbackBtn").classList.add("hidden");
+    $("feedbackResultsSection").classList.remove("hidden");
+  }).catch(function(err) {
+    console.error(err);
+    toast("Failed to send feedback request", "error");
+  });
+}
+
+function listenFeedback() {
+  if (feedbackUnsubscribe) feedbackUnsubscribe();
+
+  feedbackUnsubscribe = db.collection("feedback")
+    .where("classId", "==", currentClassId)
+    .onSnapshot(function(snapshot) {
+      var container = $("feedbackContainer");
+      container.innerHTML = "";
+
+      if (snapshot.empty) {
+        container.innerHTML = '<div class="empty-state"><div class="empty-icon">📝</div><p>No feedback received yet.</p></div>';
+        return;
+      }
+
+      $("feedbackResultsSection").classList.remove("hidden");
+      $("requestFeedbackBtn").classList.add("hidden");
+
+      snapshot.forEach(function(doc) {
+        var d = doc.data();
+        var card = document.createElement("div");
+        card.className = "feedback-card fade-up";
+
+        var stars = "⭐".repeat(parseInt(d.rating, 10));
+
+        card.innerHTML = 
+          '<div class="f-header">' +
+            '<div>' +
+              '<div class="f-name">' + d.studentName + '</div>' +
+              '<div class="f-usn">' + (d.usn || "No USN") + '</div>' +
+            '</div>' +
+            '<div class="f-rating">' + stars + '</div>' +
+          '</div>' +
+          '<div class="f-comment">' + (d.comment || "No comment provided.") + '</div>';
+        
+        container.appendChild(card);
+      });
+    });
+}
+
+function exportFeedbackToCSV() {
+  if (!currentClassId) return;
+  db.collection("feedback")
+    .where("classId", "==", currentClassId)
+    .get()
+    .then(function(snapshot) {
+      if (snapshot.empty) {
+        toast("No feedback to export!", "error");
+        return;
+      }
+
+      var csvContent = "data:text/csv;charset=utf-8,";
+      csvContent += "Student Name,USN,Rating,Comment,Timestamp\n";
+
+      snapshot.forEach(function(doc) {
+        var d = doc.data();
+        var row = [
+          '"' + (d.studentName || "") + '"',
+          '"' + (d.usn || "") + '"',
+          '"' + (d.rating || "") + '"',
+          '"' + (d.comment || "").replace(/"/g, '""') + '"',
+          '"' + (d.timestamp ? d.timestamp.toDate().toLocaleString() : "") + '"'
+        ].join(",");
+        csvContent += row + "\n";
+      });
+
+      var encodedUri = encodeURI(csvContent);
+      var link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", "feedback_" + currentClassId + ".csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast("Exported feedback successfully! 📥");
+    }).catch(function(err) {
+      console.error(err);
+      toast("Export failed", "error");
+    });
+}
+
 function answerQuestion(id) {
   var input = $("ans-" + id);
   if (!input) return;
@@ -373,14 +485,20 @@ function joinClass(e) {
     if (!doc.exists) { toast("Invalid Class ID", "error"); return; }
 
     var d = doc.data();
-    if (Date.now() > d.endTime) { toast("This class has expired ⛔", "error"); return; }
     if (d.password !== pass) { toast("Wrong password", "error"); return; }
 
     currentClassId = id;
     $("studentClassLabel").textContent = 'Joined "' + d.className + '" as ' + name;
+    $("feedbackName").value = name; // Pre-fill feedback name
     showScreen("studentChat");
     toast("Welcome to " + d.className + "!");
+    
+    // Save state
+    userRole = "student";
+    saveState();
+
     listenStudentQuestions();
+    listenClassStatus();
   }).catch(function () {
     toast("Connection error. Try again.", "error");
   });
@@ -419,9 +537,10 @@ function listenStudentQuestions() {
       container.innerHTML = "";
 
       var docsArray = [];
+      var currentStudentName = $("joinName").value.trim();
       snapshot.forEach(function (doc) {
         var d = doc.data();
-        if (d.isPublic) {
+        if (d.isPublic || d.studentName === currentStudentName) {
           docsArray.push(d);
         }
       });
@@ -452,9 +571,11 @@ function listenStudentQuestions() {
         header.style.alignItems = "flex-start";
         header.style.marginBottom = "8px";
 
+        var isMine = (d.studentName === currentStudentName);
+
         var question = document.createElement("div");
         question.className = "sq-question";
-        question.textContent = "❓ " + d.question;
+        question.textContent = (isMine ? "🙋‍♂️ You: " : "❓ ") + d.question;
         question.style.marginBottom = "0";
 
         var pill = document.createElement("span");
@@ -472,6 +593,8 @@ function listenStudentQuestions() {
           answer.textContent = "💡 " + d.answer;
         } else if (d.solved) {
           answer.textContent = "✅ Marked as solved by teacher";
+        } else if (!d.isPublic) {
+          answer.textContent = "⏳ Hidden from class (Only visible to you)";
         } else {
           answer.textContent = "⏳ Waiting for teacher...";
         }
@@ -481,6 +604,56 @@ function listenStudentQuestions() {
         container.appendChild(card);
       });
     });
+}
+
+function listenClassStatus() {
+  if (classUnsubscribe) classUnsubscribe();
+
+  classUnsubscribe = db.collection("classes").doc(currentClassId)
+    .onSnapshot(function(doc) {
+      if (!doc.exists) return;
+      var d = doc.data();
+      if (d.feedbackRequested) {
+        $("studentGiveFeedbackBtn").classList.remove("hidden");
+        toast("Teacher has requested feedback! 📝", "success");
+      } else {
+        $("studentGiveFeedbackBtn").classList.add("hidden");
+      }
+    });
+}
+
+function submitFeedback() {
+  var usn = $("feedbackUsn").value.trim();
+  var rating = $("feedbackRating").value;
+  var comment = $("feedbackComment").value.trim();
+  var name = $("feedbackName").value;
+
+  if (!usn) { toast("Please enter your USN", "error"); return; }
+
+  db.collection("feedback").add({
+    classId: currentClassId,
+    studentName: name,
+    usn: usn,
+    rating: rating,
+    comment: comment,
+    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(function() {
+    $("studentFeedback").querySelector(".glass-card").classList.add("hidden");
+    $("feedbackThanks").classList.remove("hidden");
+    toast("Feedback submitted! Thank you.");
+  }).catch(function(err) {
+    console.error(err);
+    toast("Failed to submit feedback", "error");
+  });
+}
+
+function setQuickFeedback(text) {
+  var area = $("feedbackComment");
+  if (area.value) {
+    area.value += " | " + text;
+  } else {
+    area.value = text;
+  }
 }
 
 // ===== QR SCANNER =====
@@ -595,6 +768,20 @@ document.addEventListener("DOMContentLoaded", function () {
   // Student: send question
   $("sendQuestionBtn").addEventListener("click", sendQuestion);
 
+  // Teacher: request feedback
+  $("requestFeedbackBtn").addEventListener("click", requestFeedback);
+
+  // Teacher: export feedback
+  $("exportFeedbackBtn").addEventListener("click", exportFeedbackToCSV);
+
+  // Student: submit feedback
+  $("submitFeedbackBtn").addEventListener("click", submitFeedback);
+
+  // Student: feedback button toggle
+  $("studentGiveFeedbackBtn").addEventListener("click", function() {
+    showScreen("studentFeedback");
+  });
+
   // Student: enter key to send
   $("questionInput").addEventListener("keydown", function (e) {
     if (e.key === "Enter") {
@@ -615,4 +802,53 @@ document.addEventListener("DOMContentLoaded", function () {
       toast("Invite link detected! Enter your name and hit Join.", "success");
     }
   }
+
+  // Back Button Logic
+  window.onpopstate = function(event) {
+    if (event.state && event.state.screen) {
+      showScreen(event.state.screen, true);
+    } else {
+      showScreen("home", true);
+    }
+  };
+
+  // State Persistence: Try to auto-rejoin
+  tryRestoreState();
 });
+
+// ===== STATE PERSISTENCE =====
+function saveState() {
+  var state = {
+    classId: currentClassId,
+    password: currentPassword,
+    role: userRole,
+    name: $("joinName").value.trim()
+  };
+  localStorage.setItem("doubtbox_state", JSON.stringify(state));
+}
+
+function clearState() {
+  localStorage.removeItem("doubtbox_state");
+}
+
+function tryRestoreState() {
+  var saved = localStorage.getItem("doubtbox_state");
+  if (!saved) return;
+  try {
+    var s = JSON.parse(saved);
+    if (s.role === "teacher") {
+      $("rejoinClassId").value = s.classId;
+      $("rejoinPassword").value = s.password;
+      // We don't auto-rejoin teacher because it's safer to ask for password again 
+      // but we fill the fields.
+    } else if (s.role === "student") {
+      $("joinId").value = s.classId;
+      $("joinPassword").value = s.password;
+      $("joinName").value = s.name;
+      // Auto-join student if name is present
+      if (s.name && s.classId && s.password) {
+        joinClass();
+      }
+    }
+  } catch(e) { console.error(e); }
+}
