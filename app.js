@@ -351,7 +351,8 @@ function listenQuestions() {
 function requestFeedback() {
   if (!currentClassId) return;
   db.collection("classes").doc(currentClassId).update({
-    feedbackRequested: true
+    feedbackRequested: true,
+    feedbackRequestedAt: firebase.firestore.FieldValue.serverTimestamp()
   }).then(function() {
     toast("Feedback form sent to all students! 📢");
     $("requestFeedbackBtn").classList.add("hidden");
@@ -615,10 +616,15 @@ function listenClassStatus() {
       var d = doc.data();
       if (d.feedbackRequested) {
         $("studentGiveFeedbackBtn").classList.remove("hidden");
-        toast("Teacher has requested feedback! 📝", "success");
+        // Ensure student feedback form name is always up to date
+        if (!$("feedbackName").value) {
+          $("feedbackName").value = $("joinName").value.trim();
+        }
       } else {
         $("studentGiveFeedbackBtn").classList.add("hidden");
       }
+    }, function(error) {
+      console.error("Status Listener Error:", error);
     });
 }
 
