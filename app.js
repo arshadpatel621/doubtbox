@@ -33,6 +33,8 @@ var feedbackUnsubscribe = null;
 var liveStudentsUnsubscribe = null;
 var presenceInterval = null;
 var userRole = ""; // "teacher" or "student"
+var currentQuestionFilter = "all"; // "all", "pending", "solved"
+var currentFeedbackFilter = "all"; // "all", "positive", "negative"
 
 // ===== TOAST =====
 function toast(msg, type) {
@@ -77,6 +79,10 @@ function goHome() {
   if (classUnsubscribe) classUnsubscribe();
   if (feedbackUnsubscribe) feedbackUnsubscribe();
   if (liveStudentsUnsubscribe) liveStudentsUnsubscribe();
+  
+  allQuestions = [];
+  studentQuestionsCache = [];
+  allFeedback = [];
   
   clearState();
   showScreen("home"); 
@@ -254,117 +260,151 @@ function startTimer() {
 }
 
 // ===== LISTEN QUESTIONS (Teacher) =====
+// ===== TEACHER: FILTERS =====
+function setFilter(filter) {
+  currentQuestionFilter = filter;
+  // Update UI buttons
+  document.querySelectorAll(".filter-btn").forEach(function(btn) {
+    btn.classList.toggle("active", btn.id === "filter" + filter.charAt(0).toUpperCase() + filter.slice(1));
+  });
+  // Refresh the display (we'll just re-run the render logic)
+  renderQuestions();
+}
+
+var allQuestions = []; // Local cache for teacher questions
+
 function listenQuestions() {
-  // Unsubscribe from previous listener if any
   if (questionsUnsubscribe) questionsUnsubscribe();
 
   questionsUnsubscribe = db.collection("questions")
     .where("classId", "==", currentClassId)
     .onSnapshot(function (snapshot) {
-      var total = 0, solved = 0, pending = 0;
-      var container = $("questionsContainer");
-      container.innerHTML = "";
-
-      if (snapshot.empty) {
-        container.innerHTML =
-          '<div class="empty-state">' +
-          '<div class="empty-icon">💬</div>' +
-          "<p>No questions yet. Share the code and wait for students!</p>" +
-          "</div>";
-        $("statTotal").textContent = "0";
-        $("statSolved").textContent = "0";
-        $("statPending").textContent = "0";
-        return;
-      }
-
-      var docsArray = [];
-      snapshot.forEach(function (doc) {
-        docsArray.push({ id: doc.id, data: doc.data() });
-      });
-
-      // Sort by timestamp descending (latest on top)
-      docsArray.sort(function(a, b) {
-        var timeA = a.data.timestamp ? a.data.timestamp.toMillis() : 0;
-        var timeB = b.data.timestamp ? b.data.timestamp.toMillis() : 0;
-        return timeB - timeA;
-      });
-
-      docsArray.forEach(function (item) {
-        var d = item.data;
-        var docId = item.id;
-        total++;
-        if (d.solved) solved++;
-        else pending++;
-
-        var card = document.createElement("div");
-        card.className = "question-card";
-
-        var header = document.createElement("div");
-        header.className = "q-header";
-
-        var qText = document.createElement("div");
-        qText.className = "q-text";
-        qText.textContent = d.question;
-
-        var pill = document.createElement("span");
-        pill.className = "q-pill " + (d.solved ? "solved" : "pending");
-        pill.textContent = d.solved ? "✓ Solved" : "● Pending";
-
-        header.appendChild(qText);
-        header.appendChild(pill);
-
-        var answerDiv = document.createElement("div");
-        answerDiv.className = "q-answer";
-        answerDiv.textContent = d.answer ? "💡 " + d.answer : "No answer yet";
-
-        card.appendChild(header);
-        card.appendChild(answerDiv);
-
-        if (!d.solved) {
-          var actions = document.createElement("div");
-          actions.className = "q-actions";
-
-          var visibilityBtn = document.createElement("button");
-          visibilityBtn.className = "btn " + (d.isPublic ? "btn-secondary" : "btn-primary");
-          visibilityBtn.textContent = d.isPublic ? "🙈 Hide" : "👁️ Make Public";
-          visibilityBtn.addEventListener("click", (function(id, currentState) {
-            return function() { toggleVisibility(id, currentState); };
-          })(docId, d.isPublic));
-
-          var input = document.createElement("input");
-          input.className = "form-input";
-          input.id = "ans-" + docId;
-          input.placeholder = "Type your answer...";
-
-          var replyBtn = document.createElement("button");
-          replyBtn.className = "btn btn-secondary";
-          replyBtn.textContent = "Reply";
-          replyBtn.addEventListener("click", (function (id) {
-            return function () { answerQuestion(id); };
-          })(docId));
-
-          var solveBtn = document.createElement("button");
-          solveBtn.className = "btn btn-success";
-          solveBtn.textContent = "✓";
-          solveBtn.addEventListener("click", (function (id) {
-            return function () { solveQuestion(id); };
-          })(docId));
-
-          actions.appendChild(visibilityBtn);
-          actions.appendChild(input);
-          actions.appendChild(replyBtn);
-          actions.appendChild(solveBtn);
-          
-          card.appendChild(actions);
+      snapshot.docChanges().forEach(function(change) {
+        var docId = change.doc.id;
+        var data = change.doc.data();
+        
+        if (change.type === "added") {
+          allQuestions.push({ id: docId, data: data });
+        } else if (change.type === "modified") {
+          var index = allQuestions.findIndex(q => q.id === docId);
+          if (index !== -1) allQuestions[index].data = data;
+        } else if (change.type === "removed") {
+          allQuestions = allQuestions.filter(q => q.id !== docId);
         }
-
-        container.appendChild(card);
       });
 
-      $("statTotal").textContent = total;
-      $("statSolved").textContent = solved;
-      $("statPending").textContent = pending;
+      renderQuestions();
     });
+}
+
+function renderQuestions() {
+  var total = allQuestions.length;
+  var solved = allQuestions.filter(q => q.data.solved).length;
+  var pending = total - solved;
+
+  $("statTotal").textContent = total;
+  $("statSolved").textContent = solved;
+  $("statPending").textContent = pending;
+
+  var container = $("questionsContainer");
+  
+  // Filter
+  var filtered = allQuestions.filter(function(q) {
+    if (currentQuestionFilter === "pending") return !q.data.solved;
+    if (currentQuestionFilter === "solved") return q.data.solved;
+    return true;
+  });
+
+  // Sort by timestamp descending
+  filtered.sort(function(a, b) {
+    var timeA = a.data.timestamp ? a.data.timestamp.toMillis() : 0;
+    var timeB = b.data.timestamp ? b.data.timestamp.toMillis() : 0;
+    return timeB - timeA;
+  });
+
+  if (filtered.length === 0) {
+    container.innerHTML =
+      '<div class="empty-state">' +
+      '<div class="empty-icon">💬</div>' +
+      "<p>" + (currentQuestionFilter === "all" ? "No questions yet." : "No " + currentQuestionFilter + " questions.") + "</p>" +
+      "</div>";
+    return;
+  }
+
+  // Efficient DOM management: instead of innerHTML = "", we update elements
+  // For simplicity and to avoid complex diffing, we'll rebuild if length changed significantly, 
+  // or just clear and rebuild for now BUT since we have the data locally it's much faster.
+  // Real optimization: update only changed ones.
+  
+  container.innerHTML = "";
+  filtered.forEach(function (item) {
+    var d = item.data;
+    var docId = item.id;
+
+    var card = document.createElement("div");
+    card.className = "question-card fade-in";
+    card.id = "q-card-" + docId;
+
+    var header = document.createElement("div");
+    header.className = "q-header";
+
+    var qText = document.createElement("div");
+    qText.className = "q-text";
+    qText.textContent = d.question;
+
+    var pill = document.createElement("span");
+    pill.className = "q-pill " + (d.solved ? "solved" : "pending");
+    pill.textContent = d.solved ? "✓ Solved" : "● Pending";
+
+    header.appendChild(qText);
+    header.appendChild(pill);
+
+    var answerDiv = document.createElement("div");
+    answerDiv.className = "q-answer";
+    answerDiv.textContent = d.answer ? "💡 " + d.answer : "No answer yet";
+
+    card.appendChild(header);
+    card.appendChild(answerDiv);
+
+    if (!d.solved) {
+      var actions = document.createElement("div");
+      actions.className = "q-actions";
+
+      var visibilityBtn = document.createElement("button");
+      visibilityBtn.className = "btn " + (d.isPublic ? "btn-secondary" : "btn-primary");
+      visibilityBtn.style.padding = "8px 12px";
+      visibilityBtn.style.fontSize = "12px";
+      visibilityBtn.textContent = d.isPublic ? "🙈 Hide" : "👁️ Public";
+      visibilityBtn.onclick = function() { toggleVisibility(docId, d.isPublic); };
+
+      var input = document.createElement("input");
+      input.className = "form-input";
+      input.id = "ans-" + docId;
+      input.placeholder = "Type answer...";
+      if (d.answer) input.value = d.answer;
+
+      var replyBtn = document.createElement("button");
+      replyBtn.className = "btn btn-secondary";
+      replyBtn.style.padding = "8px 16px";
+      replyBtn.textContent = "Reply";
+      replyBtn.onclick = function() { answerQuestion(docId); };
+
+      var solveBtn = document.createElement("button");
+      solveBtn.className = "btn btn-success";
+      solveBtn.style.padding = "8px 16px";
+      solveBtn.textContent = "✓";
+      solveBtn.onclick = function() { solveQuestion(docId); };
+
+      actions.appendChild(visibilityBtn);
+      actions.appendChild(input);
+      actions.appendChild(replyBtn);
+      actions.appendChild(solveBtn);
+      
+      card.appendChild(actions);
+    }
+
+    container.appendChild(card);
+  });
 }
 
 // ===== TEACHER: FEEDBACK =====
@@ -383,43 +423,76 @@ function requestFeedback() {
   });
 }
 
+var allFeedback = [];
+
+function setFeedbackFilter(filter) {
+  currentFeedbackFilter = filter;
+  var btns = $("feedbackResultsSection").querySelectorAll(".filter-btn");
+  btns.forEach(function(b) {
+    var txt = b.textContent.toLowerCase();
+    b.classList.toggle("active", 
+      (filter === "all" && txt === "all") ||
+      (filter === "positive" && txt === "positive") ||
+      (filter === "negative" && txt.includes("attention"))
+    );
+  });
+  renderFeedback();
+}
+
 function listenFeedback() {
   if (feedbackUnsubscribe) feedbackUnsubscribe();
 
   feedbackUnsubscribe = db.collection("feedback")
     .where("classId", "==", currentClassId)
     .onSnapshot(function(snapshot) {
-      var container = $("feedbackContainer");
-      container.innerHTML = "";
-
-      if (snapshot.empty) {
-        container.innerHTML = '<div class="empty-state"><div class="empty-icon">📝</div><p>No feedback received yet.</p></div>';
-        return;
-      }
-
-      $("feedbackResultsSection").classList.remove("hidden");
-      $("requestFeedbackBtn").classList.add("hidden");
-
-      snapshot.forEach(function(doc) {
-        var d = doc.data();
-        var card = document.createElement("div");
-        card.className = "feedback-card fade-up";
-
-        var stars = "⭐".repeat(parseInt(d.rating, 10));
-
-        card.innerHTML = 
-          '<div class="f-header">' +
-            '<div>' +
-              '<div class="f-name">' + d.studentName + '</div>' +
-              '<div class="f-usn">' + (d.usn || "No USN") + '</div>' +
-            '</div>' +
-            '<div class="f-rating">' + stars + '</div>' +
-          '</div>' +
-          '<div class="f-comment">' + (d.comment || "No comment provided.") + '</div>';
-        
-        container.appendChild(card);
+      snapshot.docChanges().forEach(function(change) {
+        var docId = change.doc.id;
+        var data = change.doc.data();
+        if (change.type === "added") allFeedback.push({ id: docId, data: data });
+        else if (change.type === "modified") {
+          var idx = allFeedback.findIndex(f => f.id === docId);
+          if (idx !== -1) allFeedback[idx].data = data;
+        }
+        else if (change.type === "removed") allFeedback = allFeedback.filter(f => f.id !== docId);
       });
+      renderFeedback();
     });
+}
+
+function renderFeedback() {
+  var container = $("feedbackContainer");
+  container.innerHTML = "";
+
+  if (allFeedback.length === 0) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-icon">📝</div><p>No feedback received yet.</p></div>';
+    return;
+  }
+
+  $("feedbackResultsSection").classList.remove("hidden");
+  $("requestFeedbackBtn").classList.add("hidden");
+
+  var filtered = allFeedback.filter(function(f) {
+    if (currentFeedbackFilter === "positive") return parseInt(f.data.rating) >= 4;
+    if (currentFeedbackFilter === "negative") return parseInt(f.data.rating) <= 2;
+    return true;
+  });
+
+  filtered.forEach(function(item) {
+    var d = item.data;
+    var card = document.createElement("div");
+    card.className = "feedback-card fade-in";
+    var stars = "⭐".repeat(parseInt(d.rating, 10));
+    card.innerHTML = 
+      '<div class="f-header">' +
+        '<div>' +
+          '<div class="f-name">' + d.studentName + '</div>' +
+          '<div class="f-usn">' + (d.usn || "No USN") + '</div>' +
+        '</div>' +
+        '<div class="f-rating">' + stars + '</div>' +
+      '</div>' +
+      '<div class="f-comment">' + (d.comment || "No comment provided.") + '</div>';
+    container.appendChild(card);
+  });
 }
 
 function listenLiveStudents() {
@@ -571,83 +644,108 @@ function sendQuestion() {
 }
 
 // ===== STUDENT: LISTEN =====
+// ===== STUDENT: FILTERS & RENDERING =====
+var studentQuestionsCache = [];
+
 function listenStudentQuestions() {
   if (studentUnsubscribe) studentUnsubscribe();
 
+  // Optimizing: Use two listeners or filter carefully. 
+  // For compat v10, we'll keep one listener for now but optimize the CACHE and RENDERING.
   studentUnsubscribe = db.collection("questions")
     .where("classId", "==", currentClassId)
     .onSnapshot(function (snapshot) {
-      var container = $("studentResponses");
-      container.innerHTML = "";
-
-      var docsArray = [];
       var currentStudentName = $("joinName").value.trim();
-      snapshot.forEach(function (doc) {
-        var d = doc.data();
-        if (d.isPublic || d.studentName === currentStudentName) {
-          docsArray.push(d);
-        }
-      });
-
-      if (docsArray.length === 0) {
-        container.innerHTML =
-          '<div class="empty-state">' +
-          '<div class="empty-icon">🤔</div>' +
-          "<p>Questions are hidden until approved by the teacher.</p>" +
-          "</div>";
-        return;
-      }
-
-      // Sort by timestamp descending (latest on top)
-      docsArray.sort(function(a, b) {
-        var timeA = a.timestamp ? a.timestamp.toMillis() : 0;
-        var timeB = b.timestamp ? b.timestamp.toMillis() : 0;
-        return timeB - timeA;
-      });
-
-      docsArray.forEach(function (d) {
-        var card = document.createElement("div");
-        card.className = "student-q-card fade-up";
-
-        var header = document.createElement("div");
-        header.style.display = "flex";
-        header.style.justifyContent = "space-between";
-        header.style.alignItems = "flex-start";
-        header.style.marginBottom = "8px";
-
-        var isMine = (d.studentName === currentStudentName);
-
-        var question = document.createElement("div");
-        question.className = "sq-question";
-        question.textContent = (isMine ? "🙋‍♂️ You: " : "❓ ") + d.question;
-        question.style.marginBottom = "0";
-
-        var pill = document.createElement("span");
-        pill.className = "q-pill " + (d.solved ? "solved" : "pending");
-        pill.textContent = d.solved ? "✓ Solved" : "● Pending";
-        pill.style.fontSize = "10px";
-
-        header.appendChild(question);
-        header.appendChild(pill);
-
-        var answer = document.createElement("div");
-        answer.className = "sq-answer" + (d.answer || d.solved ? " answered" : "");
+      
+      snapshot.docChanges().forEach(function(change) {
+        var docId = change.doc.id;
+        var d = change.doc.data();
         
-        if (d.answer) {
-          answer.textContent = "💡 " + d.answer;
-        } else if (d.solved) {
-          answer.textContent = "✅ Marked as solved by teacher";
-        } else if (!d.isPublic) {
-          answer.textContent = "⏳ Hidden from class (Only visible to you)";
+        // Only keep if public or mine
+        if (d.isPublic || d.studentName === currentStudentName) {
+          if (change.type === "added") {
+            studentQuestionsCache.push({ id: docId, data: d });
+          } else if (change.type === "modified") {
+            var idx = studentQuestionsCache.findIndex(q => q.id === docId);
+            if (idx !== -1) studentQuestionsCache[idx].data = d;
+            else studentQuestionsCache.push({ id: docId, data: d }); // Might have become public
+          } else if (change.type === "removed") {
+            studentQuestionsCache = studentQuestionsCache.filter(q => q.id !== docId);
+          }
         } else {
-          answer.textContent = "⏳ Waiting for teacher...";
+          // If it was in cache but no longer public/mine (e.g. hidden by teacher)
+          studentQuestionsCache = studentQuestionsCache.filter(q => q.id !== docId);
         }
-
-        card.appendChild(header);
-        card.appendChild(answer);
-        container.appendChild(card);
       });
+
+      renderStudentQuestions();
     });
+}
+
+function renderStudentQuestions() {
+  var container = $("studentResponses");
+  var currentStudentName = $("joinName").value.trim();
+
+  if (studentQuestionsCache.length === 0) {
+    container.innerHTML =
+      '<div class="empty-state">' +
+      '<div class="empty-icon">🤔</div>' +
+      "<p>No questions yet. Your questions and public ones will appear here.</p>" +
+      "</div>";
+    return;
+  }
+
+  // Sort
+  studentQuestionsCache.sort(function(a, b) {
+    var timeA = a.data.timestamp ? a.data.timestamp.toMillis() : 0;
+    var timeB = b.data.timestamp ? b.data.timestamp.toMillis() : 0;
+    return timeB - timeA;
+  });
+
+  container.innerHTML = "";
+  studentQuestionsCache.forEach(function (item) {
+    var d = item.data;
+    var card = document.createElement("div");
+    card.className = "student-q-card fade-in";
+
+    var header = document.createElement("div");
+    header.style.display = "flex";
+    header.style.justifyContent = "space-between";
+    header.style.alignItems = "flex-start";
+    header.style.marginBottom = "8px";
+
+    var isMine = (d.studentName === currentStudentName);
+
+    var question = document.createElement("div");
+    question.className = "sq-question";
+    question.textContent = (isMine ? "🙋‍♂️ You: " : "❓ ") + d.question;
+    question.style.marginBottom = "0";
+
+    var pill = document.createElement("span");
+    pill.className = "q-pill " + (d.solved ? "solved" : "pending");
+    pill.textContent = d.solved ? "✓ Solved" : "● Pending";
+    pill.style.fontSize = "10px";
+
+    header.appendChild(question);
+    header.appendChild(pill);
+
+    var answer = document.createElement("div");
+    answer.className = "sq-answer" + (d.answer || d.solved ? " answered" : "");
+    
+    if (d.answer) {
+      answer.textContent = "💡 " + d.answer;
+    } else if (d.solved) {
+      answer.textContent = "✅ Marked as solved by teacher";
+    } else if (!d.isPublic) {
+      answer.textContent = "⏳ Hidden from class (Only visible to you)";
+    } else {
+      answer.textContent = "⏳ Waiting for teacher...";
+    }
+
+    card.appendChild(header);
+    card.appendChild(answer);
+    container.appendChild(card);
+  });
 }
 
 function listenClassStatus() {
