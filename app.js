@@ -75,7 +75,8 @@ function goHome() {
   if (timerInterval) clearInterval(timerInterval);
   if (presenceInterval) clearInterval(presenceInterval);
   if (questionsUnsubscribe) questionsUnsubscribe();
-  if (studentUnsubscribe) studentUnsubscribe();
+  if (studentPrivateUnsubscribe) studentPrivateUnsubscribe();
+  if (studentPublicUnsubscribe) studentPublicUnsubscribe();
   if (classUnsubscribe) classUnsubscribe();
   if (feedbackUnsubscribe) feedbackUnsubscribe();
   if (liveStudentsUnsubscribe) liveStudentsUnsubscribe();
@@ -646,40 +647,49 @@ function sendQuestion() {
 // ===== STUDENT: LISTEN =====
 // ===== STUDENT: FILTERS & RENDERING =====
 var studentQuestionsCache = [];
+var studentPrivateUnsubscribe = null;
+var studentPublicUnsubscribe = null;
 
 function listenStudentQuestions() {
-  if (studentUnsubscribe) studentUnsubscribe();
+  // Unsubscribe from any existing listeners
+  if (studentPrivateUnsubscribe) studentPrivateUnsubscribe();
+  if (studentPublicUnsubscribe) studentPublicUnsubscribe();
+  
+  studentQuestionsCache = []; // Clear cache
+  var currentStudentName = $("joinName").value.trim();
 
-  // Optimizing: Use two listeners or filter carefully. 
-  // For compat v10, we'll keep one listener for now but optimize the CACHE and RENDERING.
-  studentUnsubscribe = db.collection("questions")
-    .where("classId", "==", currentClassId)
-    .onSnapshot(function (snapshot) {
-      var currentStudentName = $("joinName").value.trim();
+  // Helper to handle snapshot updates from both listeners
+  function handleSnapshot(snapshot) {
+    snapshot.docChanges().forEach(function(change) {
+      var docId = change.doc.id;
+      var d = change.doc.data();
       
-      snapshot.docChanges().forEach(function(change) {
-        var docId = change.doc.id;
-        var d = change.doc.data();
-        
-        // Only keep if public or mine
-        if (d.isPublic || d.studentName === currentStudentName) {
-          if (change.type === "added") {
-            studentQuestionsCache.push({ id: docId, data: d });
-          } else if (change.type === "modified") {
-            var idx = studentQuestionsCache.findIndex(q => q.id === docId);
-            if (idx !== -1) studentQuestionsCache[idx].data = d;
-            else studentQuestionsCache.push({ id: docId, data: d }); // Might have become public
-          } else if (change.type === "removed") {
-            studentQuestionsCache = studentQuestionsCache.filter(q => q.id !== docId);
-          }
-        } else {
-          // If it was in cache but no longer public/mine (e.g. hidden by teacher)
-          studentQuestionsCache = studentQuestionsCache.filter(q => q.id !== docId);
+      if (change.type === "added") {
+        // Prevent duplicates (in case a question is both mine and public)
+        if (!studentQuestionsCache.find(q => q.id === docId)) {
+          studentQuestionsCache.push({ id: docId, data: d });
         }
-      });
-
-      renderStudentQuestions();
+      } else if (change.type === "modified") {
+        var idx = studentQuestionsCache.findIndex(q => q.id === docId);
+        if (idx !== -1) studentQuestionsCache[idx].data = d;
+      } else if (change.type === "removed") {
+        studentQuestionsCache = studentQuestionsCache.filter(q => q.id !== docId);
+      }
     });
+    renderStudentQuestions();
+  }
+
+  // Listener 1: My own questions (even if private)
+  studentPrivateUnsubscribe = db.collection("questions")
+    .where("classId", "==", currentClassId)
+    .where("studentName", "==", currentStudentName)
+    .onSnapshot(handleSnapshot);
+
+  // Listener 2: Public questions from anyone
+  studentPublicUnsubscribe = db.collection("questions")
+    .where("classId", "==", currentClassId)
+    .where("isPublic", "==", true)
+    .onSnapshot(handleSnapshot);
 }
 
 function renderStudentQuestions() {
@@ -695,15 +705,16 @@ function renderStudentQuestions() {
     return;
   }
 
-  // Sort
-  studentQuestionsCache.sort(function(a, b) {
+  // Sort descending (latest first)
+  var sorted = [].concat(studentQuestionsCache);
+  sorted.sort(function(a, b) {
     var timeA = a.data.timestamp ? a.data.timestamp.toMillis() : 0;
     var timeB = b.data.timestamp ? b.data.timestamp.toMillis() : 0;
     return timeB - timeA;
   });
 
   container.innerHTML = "";
-  studentQuestionsCache.forEach(function (item) {
+  sorted.forEach(function (item) {
     var d = item.data;
     var card = document.createElement("div");
     card.className = "student-q-card fade-in";
