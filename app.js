@@ -27,7 +27,8 @@ var timerInterval = null;
 var html5QrCode = null;
 var scannerRunning = false;
 var questionsUnsubscribe = null;
-var studentUnsubscribe = null;
+var studentPrivateUnsubscribe = null;
+var studentPublicUnsubscribe = null;
 var classUnsubscribe = null;
 var feedbackUnsubscribe = null;
 var liveStudentsUnsubscribe = null;
@@ -647,8 +648,6 @@ function sendQuestion() {
 // ===== STUDENT: LISTEN =====
 // ===== STUDENT: FILTERS & RENDERING =====
 var studentQuestionsCache = [];
-var studentPrivateUnsubscribe = null;
-var studentPublicUnsubscribe = null;
 
 function listenStudentQuestions() {
   // Unsubscribe from any existing listeners
