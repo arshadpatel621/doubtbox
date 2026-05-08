@@ -18,6 +18,18 @@ var db = firebase.firestore();
 // ===== DOM HELPERS =====
 function $(id) { return document.getElementById(id); }
 
+// ===== UTILS =====
+function debounce(func, wait) {
+  var timeout;
+  return function() {
+    var context = this, args = arguments;
+    clearTimeout(timeout);
+    timeout = setTimeout(function() {
+      func.apply(context, args);
+    }, wait);
+  };
+}
+
 // ===== STATE =====
 var SCREENS = ["home", "teacherCreate", "teacherDashboard", "studentJoin", "studentChat", "studentFeedback"];
 var currentClassId = "";
@@ -36,6 +48,11 @@ var presenceInterval = null;
 var userRole = ""; // "teacher" or "student"
 var currentQuestionFilter = "all"; // "all", "pending", "solved"
 var currentFeedbackFilter = "all"; // "all", "positive", "negative"
+
+// Debounced renderers
+var debouncedRenderQuestions = debounce(renderQuestions, 100);
+var debouncedRenderStudentQuestions = debounce(renderStudentQuestions, 100);
+var debouncedRenderFeedback = debounce(renderFeedback, 100);
 
 // ===== TOAST =====
 function toast(msg, type) {
@@ -86,6 +103,7 @@ function goHome() {
   studentQuestionsCache = [];
   allFeedback = [];
   
+  switchDashboardTab('questions'); // Reset to questions tab
   clearState();
   showScreen("home"); 
 }
@@ -163,6 +181,7 @@ function createClass() {
   listenQuestions();
   listenFeedback();
   listenLiveStudents();
+  listenClassStatus();
 
   // Save state
 
@@ -207,6 +226,7 @@ function rejoinClassTeacher() {
     listenQuestions();
     listenFeedback();
     listenLiveStudents();
+    listenClassStatus();
 
     // Save state
 
@@ -266,17 +286,31 @@ function startTimer() {
 function setFilter(filter) {
   currentQuestionFilter = filter;
   // Update UI buttons
-  document.querySelectorAll(".filter-btn").forEach(function(btn) {
+  document.querySelectorAll("#questionsTabContent .filter-btn").forEach(function(btn) {
     btn.classList.toggle("active", btn.id === "filter" + filter.charAt(0).toUpperCase() + filter.slice(1));
   });
-  // Refresh the display (we'll just re-run the render logic)
-  renderQuestions();
+  // Use debounced version
+  debouncedRenderQuestions();
 }
 
-var allQuestions = []; // Local cache for teacher questions
+function switchDashboardTab(tab) {
+  if (tab === "questions") {
+    $("questionsTabContent").classList.remove("hidden");
+    $("feedbackTabContent").classList.add("hidden");
+    $("tabQuestions").classList.add("active");
+    $("tabFeedback").classList.remove("active");
+  } else {
+    $("questionsTabContent").classList.add("hidden");
+    $("feedbackTabContent").classList.remove("hidden");
+    $("tabQuestions").classList.remove("active");
+    $("tabFeedback").classList.add("active");
+  }
+}
 
 function listenQuestions() {
   if (questionsUnsubscribe) questionsUnsubscribe();
+  allQuestions = []; // Clear cache
+  renderQuestions(); // Clear DOM
 
   questionsUnsubscribe = db.collection("questions")
     .where("classId", "==", currentClassId)
@@ -286,7 +320,10 @@ function listenQuestions() {
         var data = change.doc.data();
         
         if (change.type === "added") {
-          allQuestions.push({ id: docId, data: data });
+          // Check if already in array (prevent duplicates from multiple listeners if any)
+          if (!allQuestions.find(q => q.id === docId)) {
+            allQuestions.push({ id: docId, data: data });
+          }
         } else if (change.type === "modified") {
           var index = allQuestions.findIndex(q => q.id === docId);
           if (index !== -1) allQuestions[index].data = data;
@@ -295,7 +332,7 @@ function listenQuestions() {
         }
       });
 
-      renderQuestions();
+      debouncedRenderQuestions();
     });
 }
 
@@ -333,79 +370,125 @@ function renderQuestions() {
     return;
   }
 
-  // Efficient DOM management: instead of innerHTML = "", we update elements
-  // For simplicity and to avoid complex diffing, we'll rebuild if length changed significantly, 
-  // or just clear and rebuild for now BUT since we have the data locally it's much faster.
-  // Real optimization: update only changed ones.
-  
-  container.innerHTML = "";
-  filtered.forEach(function (item) {
+  // Remove empty state if it exists
+  var empty = container.querySelector(".empty-state");
+  if (empty) empty.remove();
+
+  // Create/Update cards without clearing innerHTML
+  filtered.forEach(function (item, index) {
     var d = item.data;
     var docId = item.id;
+    var cardId = "q-card-" + docId;
+    var card = $(cardId);
 
-    var card = document.createElement("div");
-    card.className = "question-card fade-in";
-    card.id = "q-card-" + docId;
-
-    var header = document.createElement("div");
-    header.className = "q-header";
-
-    var qText = document.createElement("div");
-    qText.className = "q-text";
-    qText.textContent = d.question;
-
-    var pill = document.createElement("span");
-    pill.className = "q-pill " + (d.solved ? "solved" : "pending");
-    pill.textContent = d.solved ? "✓ Solved" : "● Pending";
-
-    header.appendChild(qText);
-    header.appendChild(pill);
-
-    var answerDiv = document.createElement("div");
-    answerDiv.className = "q-answer";
-    answerDiv.textContent = d.answer ? "💡 " + d.answer : "No answer yet";
-
-    card.appendChild(header);
-    card.appendChild(answerDiv);
-
-    if (!d.solved) {
-      var actions = document.createElement("div");
-      actions.className = "q-actions";
-
-      var visibilityBtn = document.createElement("button");
-      visibilityBtn.className = "btn " + (d.isPublic ? "btn-secondary" : "btn-primary");
-      visibilityBtn.style.padding = "8px 12px";
-      visibilityBtn.style.fontSize = "12px";
-      visibilityBtn.textContent = d.isPublic ? "🙈 Hide" : "👁️ Public";
-      visibilityBtn.onclick = function() { toggleVisibility(docId, d.isPublic); };
-
-      var input = document.createElement("input");
-      input.className = "form-input";
-      input.id = "ans-" + docId;
-      input.placeholder = "Type answer...";
-      if (d.answer) input.value = d.answer;
-
-      var replyBtn = document.createElement("button");
-      replyBtn.className = "btn btn-secondary";
-      replyBtn.style.padding = "8px 16px";
-      replyBtn.textContent = "Reply";
-      replyBtn.onclick = function() { answerQuestion(docId); };
-
-      var solveBtn = document.createElement("button");
-      solveBtn.className = "btn btn-success";
-      solveBtn.style.padding = "8px 16px";
-      solveBtn.textContent = "✓";
-      solveBtn.onclick = function() { solveQuestion(docId); };
-
-      actions.appendChild(visibilityBtn);
-      actions.appendChild(input);
-      actions.appendChild(replyBtn);
-      actions.appendChild(solveBtn);
-      
-      card.appendChild(actions);
+    if (!card) {
+      card = document.createElement("div");
+      card.className = "question-card fade-in";
+      card.id = cardId;
+      container.insertBefore(card, container.children[index]);
+    } else {
+      // Reorder if necessary
+      if (container.children[index] !== card) {
+        container.insertBefore(card, container.children[index]);
+      }
     }
 
-    container.appendChild(card);
+    // UPDATE CARD CONTENT
+    var header = card.querySelector(".q-header");
+    if (!header) {
+      header = document.createElement("div");
+      header.className = "q-header";
+      card.appendChild(header);
+    }
+
+    var qText = header.querySelector(".q-text");
+    if (!qText) {
+      qText = document.createElement("div");
+      qText.className = "q-text";
+      header.appendChild(qText);
+    }
+    if (qText.textContent !== d.question) qText.textContent = d.question;
+
+    var pill = header.querySelector(".q-pill");
+    if (!pill) {
+      pill = document.createElement("span");
+      header.appendChild(pill);
+    }
+    var pillClass = "q-pill " + (d.solved ? "solved" : "pending");
+    if (pill.className !== pillClass) pill.className = pillClass;
+    var pillText = d.solved ? "✓ Solved" : "● Pending";
+    if (pill.textContent !== pillText) pill.textContent = pillText;
+
+    var answerDiv = card.querySelector(".q-answer");
+    if (!answerDiv) {
+      answerDiv = document.createElement("div");
+      answerDiv.className = "q-answer";
+      card.appendChild(answerDiv);
+    }
+    var answerText = d.answer ? "💡 " + d.answer : "No answer yet";
+    if (answerDiv.textContent !== answerText) answerDiv.textContent = answerText;
+
+    // Actions
+    var actions = card.querySelector(".q-actions");
+    if (d.solved) {
+      if (actions) actions.remove();
+    } else {
+      if (!actions) {
+        actions = document.createElement("div");
+        actions.className = "q-actions";
+        
+        var visibilityBtn = document.createElement("button");
+        visibilityBtn.className = "btn";
+        visibilityBtn.style.padding = "8px 12px";
+        visibilityBtn.style.fontSize = "12px";
+        actions.appendChild(visibilityBtn);
+
+        var input = document.createElement("input");
+        input.className = "form-input";
+        input.placeholder = "Type answer...";
+        actions.appendChild(input);
+
+        var replyBtn = document.createElement("button");
+        replyBtn.className = "btn btn-secondary";
+        replyBtn.style.padding = "8px 16px";
+        replyBtn.textContent = "Reply";
+        actions.appendChild(replyBtn);
+
+        var solveBtn = document.createElement("button");
+        solveBtn.className = "btn btn-success";
+        solveBtn.style.padding = "8px 16px";
+        solveBtn.textContent = "✓";
+        actions.appendChild(solveBtn);
+        
+        card.appendChild(actions);
+      }
+
+      // Update Visibility Button
+      var vBtn = actions.querySelector(".btn:not(.btn-secondary):not(.btn-success)");
+      var vBtnClass = "btn " + (d.isPublic ? "btn-secondary" : "btn-primary");
+      if (vBtn.className !== vBtnClass) vBtn.className = vBtnClass;
+      var vBtnText = d.isPublic ? "🙈 Hide" : "👁️ Public";
+      if (vBtn.textContent !== vBtnText) vBtn.textContent = vBtnText;
+      vBtn.onclick = function() { toggleVisibility(docId, d.isPublic); };
+
+      // Update Input & Buttons
+      var inp = actions.querySelector(".form-input");
+      inp.id = "ans-" + docId;
+      if (d.answer && inp.value !== d.answer && !inp.matches(':focus')) {
+        inp.value = d.answer;
+      }
+
+      actions.querySelector(".btn-secondary").onclick = function() { answerQuestion(docId); };
+      actions.querySelector(".btn-success").onclick = function() { solveQuestion(docId); };
+    }
+  });
+
+  // Cleanup: Remove cards that are no longer in the filtered list
+  var filteredIds = filtered.map(q => "q-card-" + q.id);
+  Array.from(container.children).forEach(child => {
+    if (child.id && child.id.startsWith("q-card-") && !filteredIds.includes(child.id)) {
+      child.remove();
+    }
   });
 }
 
@@ -417,8 +500,13 @@ function requestFeedback() {
     feedbackRequestedAt: firebase.firestore.FieldValue.serverTimestamp()
   }).then(function() {
     toast("Feedback form sent to all students! 📢");
-    $("requestFeedbackBtn").classList.add("hidden");
-    $("feedbackResultsSection").classList.remove("hidden");
+    var btn = $("requestFeedbackBtn");
+    if (btn) {
+      btn.textContent = "📢 Feedback Requested ✅";
+      btn.classList.replace("btn-primary", "btn-secondary");
+      btn.style.opacity = "0.7";
+      btn.disabled = true;
+    }
   }).catch(function(err) {
     console.error(err);
     toast("Failed to send feedback request", "error");
@@ -443,6 +531,8 @@ function setFeedbackFilter(filter) {
 
 function listenFeedback() {
   if (feedbackUnsubscribe) feedbackUnsubscribe();
+  allFeedback = []; // Clear cache
+  renderFeedback(); // Clear DOM
 
   feedbackUnsubscribe = db.collection("feedback")
     .where("classId", "==", currentClassId)
@@ -463,15 +553,15 @@ function listenFeedback() {
 
 function renderFeedback() {
   var container = $("feedbackContainer");
-  container.innerHTML = "";
 
   if (allFeedback.length === 0) {
     container.innerHTML = '<div class="empty-state"><div class="empty-icon">📝</div><p>No feedback received yet.</p></div>';
     return;
   }
 
-  $("feedbackResultsSection").classList.remove("hidden");
-  $("requestFeedbackBtn").classList.add("hidden");
+  // Remove empty state
+  var empty = container.querySelector(".empty-state");
+  if (empty) empty.remove();
 
   var filtered = allFeedback.filter(function(f) {
     if (currentFeedbackFilter === "positive") return parseInt(f.data.rating) >= 4;
@@ -479,21 +569,81 @@ function renderFeedback() {
     return true;
   });
 
-  filtered.forEach(function(item) {
+  filtered.forEach(function(item, index) {
     var d = item.data;
-    var card = document.createElement("div");
-    card.className = "feedback-card fade-in";
+    var docId = item.id;
+    var cardId = "f-card-" + docId;
+    var card = $(cardId);
+
+    if (!card) {
+      card = document.createElement("div");
+      card.className = "feedback-card fade-in";
+      card.id = cardId;
+      container.insertBefore(card, container.children[index]);
+    } else {
+      if (container.children[index] !== card) {
+        container.insertBefore(card, container.children[index]);
+      }
+    }
+
     var stars = "⭐".repeat(parseInt(d.rating, 10));
-    card.innerHTML = 
-      '<div class="f-header">' +
-        '<div>' +
-          '<div class="f-name">' + d.studentName + '</div>' +
-          '<div class="f-usn">' + (d.usn || "No USN") + '</div>' +
-        '</div>' +
-        '<div class="f-rating">' + stars + '</div>' +
-      '</div>' +
-      '<div class="f-comment">' + (d.comment || "No comment provided.") + '</div>';
-    container.appendChild(card);
+    
+    // Update card content if changed
+    var header = card.querySelector(".f-header");
+    if (!header) {
+      header = document.createElement("div");
+      header.className = "f-header";
+      card.appendChild(header);
+    }
+
+    var nameBox = header.querySelector(".f-name-box");
+    if (!nameBox) {
+      nameBox = document.createElement("div");
+      nameBox.className = "f-name-box";
+      header.appendChild(nameBox);
+    }
+
+    var name = nameBox.querySelector(".f-name");
+    if (!name) {
+      name = document.createElement("div");
+      name.className = "f-name";
+      nameBox.appendChild(name);
+    }
+    if (name.textContent !== d.studentName) name.textContent = d.studentName;
+
+    var usn = nameBox.querySelector(".f-usn");
+    if (!usn) {
+      usn = document.createElement("div");
+      usn.className = "f-usn";
+      nameBox.appendChild(usn);
+    }
+    var usnText = d.usn || "No USN";
+    if (usn.textContent !== usnText) usn.textContent = usnText;
+
+    var rating = header.querySelector(".f-rating");
+    if (!rating) {
+      rating = document.createElement("div");
+      rating.className = "f-rating";
+      header.appendChild(rating);
+    }
+    if (rating.textContent !== stars) rating.textContent = stars;
+
+    var comment = card.querySelector(".f-comment");
+    if (!comment) {
+      comment = document.createElement("div");
+      comment.className = "f-comment";
+      card.appendChild(comment);
+    }
+    var commentText = d.comment || "No comment provided.";
+    if (comment.textContent !== commentText) comment.textContent = commentText;
+  });
+
+  // Cleanup
+  var filteredIds = filtered.map(f => "f-card-" + f.id);
+  Array.from(container.children).forEach(child => {
+    if (child.id && child.id.startsWith("f-card-") && !filteredIds.includes(child.id)) {
+      child.remove();
+    }
   });
 }
 
@@ -553,6 +703,47 @@ function exportFeedbackToCSV() {
       link.click();
       document.body.removeChild(link);
       toast("Exported feedback successfully! 📥");
+    }).catch(function(err) {
+      console.error(err);
+      toast("Export failed", "error");
+    });
+}
+
+function exportClassReportToCSV() {
+  if (!currentClassId) return;
+  db.collection("questions")
+    .where("classId", "==", currentClassId)
+    .get()
+    .then(function(snapshot) {
+      if (snapshot.empty) {
+        toast("No questions to export!", "error");
+        return;
+      }
+
+      var csvContent = "data:text/csv;charset=utf-8,";
+      csvContent += "Status,Question,Answer,Student Name,Timestamp\n";
+
+      snapshot.forEach(function(doc) {
+        var d = doc.data();
+        var status = d.solved ? "SOLVED" : "PENDING";
+        var row = [
+          '"' + status + '"',
+          '"' + (d.question || "").replace(/"/g, '""') + '"',
+          '"' + (d.answer || "").replace(/"/g, '""') + '"',
+          '"' + (d.studentName || "") + '"',
+          '"' + (d.timestamp ? (d.timestamp.toDate ? d.timestamp.toDate().toLocaleString() : new Date(d.timestamp).toLocaleString()) : "") + '"'
+        ].join(",");
+        csvContent += row + "\n";
+      });
+
+      var encodedUri = encodeURI(csvContent);
+      var link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", "class_report_" + currentClassId + ".csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast("Class report exported successfully! 📊");
     }).catch(function(err) {
       console.error(err);
       toast("Export failed", "error");
@@ -655,6 +846,7 @@ function listenStudentQuestions() {
   if (studentPublicUnsubscribe) studentPublicUnsubscribe();
   
   studentQuestionsCache = []; // Clear cache
+  renderStudentQuestions(); // Clear DOM
   var currentStudentName = $("joinName").value.trim();
 
   // Helper to handle snapshot updates from both listeners
@@ -675,7 +867,7 @@ function listenStudentQuestions() {
         studentQuestionsCache = studentQuestionsCache.filter(q => q.id !== docId);
       }
     });
-    renderStudentQuestions();
+    debouncedRenderStudentQuestions();
   }
 
   // Listener 1: My own questions (even if private)
@@ -704,6 +896,10 @@ function renderStudentQuestions() {
     return;
   }
 
+  // Remove empty state if it exists
+  var empty = container.querySelector(".empty-state");
+  if (empty) empty.remove();
+
   // Sort descending (latest first)
   var sorted = [].concat(studentQuestionsCache);
   sorted.sort(function(a, b) {
@@ -712,49 +908,86 @@ function renderStudentQuestions() {
     return timeB - timeA;
   });
 
-  container.innerHTML = "";
-  sorted.forEach(function (item) {
+  // Create/Update cards without clearing innerHTML
+  sorted.forEach(function (item, index) {
     var d = item.data;
-    var card = document.createElement("div");
-    card.className = "student-q-card fade-in";
+    var docId = item.id;
+    var cardId = "sq-card-" + docId;
+    var card = $(cardId);
 
-    var header = document.createElement("div");
-    header.style.display = "flex";
-    header.style.justifyContent = "space-between";
-    header.style.alignItems = "flex-start";
-    header.style.marginBottom = "8px";
-
-    var isMine = (d.studentName === currentStudentName);
-
-    var question = document.createElement("div");
-    question.className = "sq-question";
-    question.textContent = (isMine ? "🙋‍♂️ You: " : "❓ ") + d.question;
-    question.style.marginBottom = "0";
-
-    var pill = document.createElement("span");
-    pill.className = "q-pill " + (d.solved ? "solved" : "pending");
-    pill.textContent = d.solved ? "✓ Solved" : "● Pending";
-    pill.style.fontSize = "10px";
-
-    header.appendChild(question);
-    header.appendChild(pill);
-
-    var answer = document.createElement("div");
-    answer.className = "sq-answer" + (d.answer || d.solved ? " answered" : "");
-    
-    if (d.answer) {
-      answer.textContent = "💡 " + d.answer;
-    } else if (d.solved) {
-      answer.textContent = "✅ Marked as solved by teacher";
-    } else if (!d.isPublic) {
-      answer.textContent = "⏳ Hidden from class (Only visible to you)";
+    if (!card) {
+      card = document.createElement("div");
+      card.className = "student-q-card fade-in";
+      card.id = cardId;
+      container.insertBefore(card, container.children[index]);
     } else {
-      answer.textContent = "⏳ Waiting for teacher...";
+      // Reorder if necessary
+      if (container.children[index] !== card) {
+        container.insertBefore(card, container.children[index]);
+      }
     }
 
-    card.appendChild(header);
-    card.appendChild(answer);
-    container.appendChild(card);
+    // UPDATE CARD CONTENT
+    var header = card.querySelector(".sq-header-wrapper"); // Use a wrapper class to find it
+    if (!header) {
+      header = document.createElement("div");
+      header.className = "sq-header-wrapper";
+      header.style.display = "flex";
+      header.style.justifyContent = "space-between";
+      header.style.alignItems = "flex-start";
+      header.style.marginBottom = "8px";
+      card.appendChild(header);
+    }
+
+    var isMine = (d.studentName === currentStudentName);
+    var question = header.querySelector(".sq-question");
+    if (!question) {
+      question = document.createElement("div");
+      question.className = "sq-question";
+      question.style.marginBottom = "0";
+      header.appendChild(question);
+    }
+    var qText = (isMine ? "🙋‍♂️ You: " : "❓ ") + d.question;
+    if (question.textContent !== qText) question.textContent = qText;
+
+    var pill = header.querySelector(".q-pill");
+    if (!pill) {
+      pill = document.createElement("span");
+      pill.style.fontSize = "10px";
+      header.appendChild(pill);
+    }
+    var pillClass = "q-pill " + (d.solved ? "solved" : "pending");
+    if (pill.className !== pillClass) pill.className = pillClass;
+    var pillText = d.solved ? "✓ Solved" : "● Pending";
+    if (pill.textContent !== pillText) pill.textContent = pillText;
+
+    var answer = card.querySelector(".sq-answer");
+    if (!answer) {
+      answer = document.createElement("div");
+      card.appendChild(answer);
+    }
+    var answerClass = "sq-answer" + (d.answer || d.solved ? " answered" : "");
+    if (answer.className !== answerClass) answer.className = answerClass;
+    
+    var answerText = "";
+    if (d.answer) {
+      answerText = "💡 " + d.answer;
+    } else if (d.solved) {
+      answerText = "✅ Marked as solved by teacher";
+    } else if (!d.isPublic) {
+      answerText = "⏳ Hidden from class (Only visible to you)";
+    } else {
+      answerText = "⏳ Waiting for teacher...";
+    }
+    if (answer.textContent !== answerText) answer.textContent = answerText;
+  });
+
+  // Cleanup: Remove cards that are no longer in the cache
+  var cachedIds = studentQuestionsCache.map(q => "sq-card-" + q.id);
+  Array.from(container.children).forEach(child => {
+    if (child.id && child.id.startsWith("sq-card-") && !cachedIds.includes(child.id)) {
+      child.remove();
+    }
   });
 }
 
@@ -766,13 +999,24 @@ function listenClassStatus() {
       if (!doc.exists) return;
       var d = doc.data();
       if (d.feedbackRequested) {
-        $("studentGiveFeedbackBtn").classList.remove("hidden");
-        // Ensure student feedback form name is always up to date
-        if (!$("feedbackName").value) {
-          $("feedbackName").value = $("joinName").value.trim();
+        if (userRole === "student") {
+          $("studentGiveFeedbackBtn").classList.remove("hidden");
+          if (!$("feedbackName").value) {
+            $("feedbackName").value = $("joinName").value.trim();
+          }
+        } else if (userRole === "teacher") {
+          var btn = $("requestFeedbackBtn");
+          if (btn) {
+            btn.textContent = "📢 Feedback Requested ✅";
+            btn.classList.replace("btn-primary", "btn-secondary");
+            btn.style.opacity = "0.7";
+            btn.disabled = true;
+          }
         }
       } else {
-        $("studentGiveFeedbackBtn").classList.add("hidden");
+        if (userRole === "student") {
+          $("studentGiveFeedbackBtn").classList.add("hidden");
+        }
       }
     }, function(error) {
       console.error("Status Listener Error:", error);
@@ -949,6 +1193,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Teacher: export feedback
   $("exportFeedbackBtn").addEventListener("click", exportFeedbackToCSV);
+
+  // Teacher: export class report
+  var exportReportBtn = $("exportReportBtn");
+  if (exportReportBtn) exportReportBtn.addEventListener("click", exportClassReportToCSV);
 
   // Student: submit feedback
   $("submitFeedbackBtn").addEventListener("click", submitFeedback);

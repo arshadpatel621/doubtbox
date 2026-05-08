@@ -446,6 +446,41 @@ select.form-input option { background: #1e1b4b; color: #f1f5f9; }
   100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); }
 }
 
+/* ===== DASHBOARD TABS ===== */
+.dashboard-tabs {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 6px;
+  border-radius: 16px;
+  border: 1px solid var(--glass-border);
+}
+
+.tab-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: 600;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.tab-btn.active {
+  background: var(--surface);
+  color: var(--primary-light);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.tab-icon { font-size: 1.2em; }
+
 /* ===== FILTER BAR ===== */
 .filter-bar {
   display: flex;
@@ -635,4 +670,8 @@ select.form-input option { background: #1e1b4b; color: #f1f5f9; }
   .stats-grid { gap: 8px; }
   .stat-card { padding: 14px 8px; }
   .stat-card .stat-value { font-size: 24px; }
+  
+  .dashboard-tabs { gap: 8px; padding: 4px; }
+  .tab-btn { padding: 10px 6px; font-size: 13px; }
+  .tab-icon { font-size: 1.1em; }
 }

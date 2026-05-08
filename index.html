@@ -165,9 +165,24 @@
       </div>
     </div>
 
-    <!-- Questions -->
-    <div class="glass-card fade-up delay-3" style="margin-top:20px;">
-      <h3 style="font-size:18px;font-weight:700;margin-bottom:16px;">Student Questions</h3>
+    <!-- Dashboard Tabs -->
+    <div class="dashboard-tabs fade-up delay-2">
+      <button class="tab-btn active" id="tabQuestions" onclick="switchDashboardTab('questions')">
+        <span class="tab-icon">💬</span> Questions
+      </button>
+      <button class="tab-btn" id="tabFeedback" onclick="switchDashboardTab('feedback')">
+        <span class="tab-icon">📝</span> Feedback
+      </button>
+    </div>
+
+    <!-- Questions Tab Content -->
+    <div id="questionsTabContent">
+      <!-- Questions -->
+      <div class="glass-card fade-up delay-3" style="margin-top:20px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap: wrap; gap: 10px;">
+        <h3 style="font-size:18px;font-weight:700;margin:0;">Student Questions</h3>
+        <button class="btn btn-secondary" id="exportReportBtn" style="font-size:12px; padding:8px 14px;">📊 Report</button>
+      </div>
       
       <div class="filter-bar">
         <button class="filter-btn active" id="filterAll" onclick="setFilter('all')">All</button>
@@ -183,27 +198,31 @@
       </div>
     </div>
 
-    <!-- Feedback Trigger -->
-    <button class="btn btn-primary fade-up delay-3" id="requestFeedbackBtn" style="margin-top:20px; background:linear-gradient(135deg, #f59e0b, #d97706);">📢 Request Feedback Form</button>
+      </div>
+    </div> <!-- End questionsTabContent -->
 
-    <!-- Feedback Results -->
-    <div class="glass-card fade-up delay-3 hidden" id="feedbackResultsSection" style="margin-top:20px;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-        <h3 style="font-size:18px;font-weight:700;margin:0;">Class Feedback</h3>
-        <div class="filter-bar">
-          <button class="filter-btn active" onclick="setFeedbackFilter('all')">All</button>
-          <button class="filter-btn" onclick="setFeedbackFilter('positive')">Positive</button>
-          <button class="filter-btn" onclick="setFeedbackFilter('negative')">Needs Attention</button>
+    <!-- Feedback Tab Content -->
+    <div id="feedbackTabContent" class="hidden">
+      <!-- Feedback Results -->
+      <div class="glass-card fade-up delay-3" id="feedbackResultsSection" style="margin-top:20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap: wrap; gap:10px;">
+          <h3 style="font-size:18px;font-weight:700;margin:0;">Class Feedback</h3>
+          <button class="btn btn-primary" id="requestFeedbackBtn" style="font-size:12px; padding:8px 14px; background:linear-gradient(135deg, #f59e0b, #d97706); border:none;">📢 Send Feedback Request</button>
+          <div class="filter-bar" style="margin:0;">
+            <button class="filter-btn active" onclick="setFeedbackFilter('all')">All</button>
+            <button class="filter-btn" onclick="setFeedbackFilter('positive')">Positive</button>
+            <button class="filter-btn" onclick="setFeedbackFilter('negative')">Needs Attention</button>
+          </div>
+          <button class="btn btn-outline" id="exportFeedbackBtn">📥 Export CSV</button>
         </div>
-        <button class="btn btn-outline" id="exportFeedbackBtn">📥 Export CSV</button>
-      </div>
-      <div id="feedbackContainer">
-        <div class="empty-state">
-          <div class="empty-icon">📝</div>
-          <p>No feedback received yet.</p>
+        <div id="feedbackContainer">
+          <div class="empty-state">
+            <div class="empty-icon">📝</div>
+            <p>No feedback received yet.</p>
+          </div>
         </div>
       </div>
-    </div>
+    </div> <!-- End feedbackTabContent -->
   </div>
 
   <!-- ===== STUDENT: JOIN ===== -->
